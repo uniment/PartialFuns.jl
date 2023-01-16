@@ -27,6 +27,10 @@ underscores!(ex) = let  isexpr=Meta.isexpr,
         newex = Expr(:call)
         newex.args = Any[ex.args[1]; ex.args[2].args]
         ex.head, ex.args = :call, Any[broadcaster, underscores!(newex)]
+    elseif isexpr(ex, :call) && length(ex.args) > 1 && first(ex.args[2].args) == :_  # fix all args by calling f(a, b; _)
+        popfirst!(ex.args[2].args)
+        let (f, p) = ex.args[1:2];  ex.args[1:2] .= (p, f)  end # pull parameters forward
+        pushfirst!(ex.args, fix)
     elseif isexpr(ex, :.) && length(ex.args) == 2 && (ex.args[1] == :_ || ex.args[2] == :(:_)) # getproperty special case
         ex.head, ex.args = :call, Any[:getproperty, ex.args[1], ex.args[2] == :(:_) ? :_ : ex.args[2]]
         underscores!(ex)
