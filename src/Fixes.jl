@@ -63,17 +63,17 @@ show(io::IO, ::UnfixedArgumentSplat{T}) where T = print(io, T≡Any ? "_..." : "
 length(::Union{UnfixedArgument,UnfixedArgumentSplat}) = 1
 iterate(a::Union{UnfixedArgument,UnfixedArgumentSplat}, n=1) = a
 struct Fix{F, A<:Tuple, K<:NamedTuple} #<: Function # I want pretty-printing for now, but we should subtype Function
-    f::F; args::A; kw::K
-    @inline Fix(f::F, args...; kw...) where F = let kw=(; kw...); new{F, typeof(args), typeof(kw)}(f, args, kw) end
+    f::F; args::A; kws::K
+    @inline Fix(f::F, args...; kws...) where F = let kws=(; kws...); new{F, typeof(args), typeof(kws)}(f, args, kws) end
 end
 _showargs(args::Tuple) = join(map(repr, args), ", ")
-_showargs(kw::NamedTuple) = isempty(kw) ? "" : "; " * join(("$k = " * repr(v) for (k,v) = pairs(kw)), ", ")
-show(io::IO, f::Fix) = print(io, repr(f.f), "(", _showargs(f.args), _showargs(f.kw), ")")
+_showargs(kws::NamedTuple) = isempty(kws) ? "" : "; " * join(("$k = " * repr(v) for (k,v) = pairs(kws)), ", ")
+show(io::IO, f::Fix) = print(io, repr(f.f), "(", _showargs(f.args), _showargs(f.kws), ")")
 show(io::IO, f::Fix{typeof(getproperty)}) = print(io, repr(f.args[1]), ".", f.args[2])
-show(io::IO, f::Fix{typeof(getindex)}) = print(io, repr(f.args[1]), "[", _showargs(f.args[2:end]), _showargs(f.kw), "]")
+show(io::IO, f::Fix{typeof(getindex)}) = print(io, repr(f.args[1]), "[", _showargs(f.args[2:end]), _showargs(f.kws), "]")
 show(io::IO, f::Fix{typeof(string)}) = let str(x) = x isa UnfixedArgument ? "\$"*repr(x) : x isa UnfixedArgumentSplat ? "\$("*repr(x)*")" : x
     print(io, "\"", map(str, f.args)..., "\"") end
-@inline (f::Fix{F,A,K})(args...; kw...) where {F,A,K} = f.f(_assemble_args(f.args, args)...; f.kw..., kw...)
+@inline (f::Fix{F,A,K})(args...; kws...) where {F,A,K} = f.f(_assemble_args(f.args, args)...; f.kws..., kws...)
 parameters(T::DataType; ignore=0) = Tuple(T.parameters)[1:end-ignore]
 parameters(T::UnionAll; ignore=0) = parameters(T.body; ignore=ignore+1)
 @inline @generated _assemble_args(fargs::T1, args::T2) where {T1<:Tuple, T2<:Tuple} = let out_ex = Expr(:tuple)
@@ -109,10 +109,10 @@ FixLast(f, x)  = Fix(f, UnfixedArgumentSplat(), x)
 (f::Fix1)(y) = f.f(f.x, y) # specialization
 (f::Fix2)(y) = f.f(y, f.x) # specialization
 struct BroadcastFix{F,A,K} f::Fix{F,A,K} end
-(bf::BroadcastFix{F,A,K})(args...; kw...) where {F,A,K} = Broadcast.BroadcastFunction(bf.f.f)(_assemble_args(bf.f.args, args)...; bf.f.kw..., kw...)
-show(io::IO, bf::BroadcastFix) = print(io, repr(bf.f.f), ".(", _showargs(bf.f.args), _showargs(bf.f.kw), ")")
+(bf::BroadcastFix{F,A,K})(args...; kws...) where {F,A,K} = Broadcast.BroadcastFunction(bf.f.f)(_assemble_args(bf.f.args, args)...; bf.f.kws..., kws...)
+show(io::IO, bf::BroadcastFix) = print(io, repr(bf.f.f), ".(", _showargs(bf.f.args), _showargs(bf.f.kws), ")")
 length(bf::BroadcastFix) = maximum(length, bf.f.args)
 iterate(bf::BroadcastFix, (i,t)=(1,zip(map(a->length(a)==1 ? Iterators.repeated(a) : Iterators.cycle(a), bf.f.args)...))) = 
-    i > length(bf) ? nothing : let (f,t) = Iterators.peel(t);  Fix(bf.f.f, f...; bf.f.kw...), (i+1, t)  end
+    i > length(bf) ? nothing : let (f,t) = Iterators.peel(t);  Fix(bf.f.f, f...; bf.f.kws...), (i+1, t)  end
 
 end # Fixes
