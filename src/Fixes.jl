@@ -1,7 +1,7 @@
 module Fixes 
 export Fix, Fix1, Fix2, FixFirst, FixLast, UnfixedArgument, UnfixedArgumentSplat, @underscores
 using .Meta, REPL
-init_repl() = pushfirst!(Base.active_repl_backend.ast_transforms, underscores!)
+init_repl() = let at=Base.active_repl_backend.ast_transforms; first(at) ≡ underscores! || pushfirst!(at, underscores!); at end
 
 macro underscores(ex)  esc(underscores!(ex))  end
 underscores!(ex) = let  uf=:(Fixes.UnfixedArgument), ufs=:(Fixes.UnfixedArgumentSplat),
@@ -18,10 +18,12 @@ underscores!(ex) = let  uf=:(Fixes.UnfixedArgument), ufs=:(Fixes.UnfixedArgument
 
     is_uf_or_ufs(ex) && return Expr(:call, fix, :identity, repl_undr(ex))
     ex isa Expr && !(isexpr(ex, :using) || isexpr(ex, :quote)) || return ex
-    if isexpr(ex, :call) && any(is_uf_or_ufs, ex.args[2:end])
+    greenlight1 = any(is_uf_or_ufs, ex.args[2:end])
+    isexpr(ex, :call) && greenlight1 && is_uf_or_ufs(ex.args[1]) && error("wut u doin?!?")
+    greenlight2 = greenlight1 || !isempty(ex.args) && is_uf_or_ufs(ex.args[1])
+    if isexpr(ex, :call) && greenlight1
         if string(ex.args[1])[1] != '.'  # normal function call; avoid the broadcasting infix operators
             findfirst(==(:(_...)), ex.args) == findlast(==(:(_...)), ex.args) || error("only one _... splat permitted")
-            ex.args[1] != :_ || error("wut u doin?!?")
             if length(ex.args) > 2 && isexpr(ex.args[2], :parameters) # pull parameters forward
                 let (f, p) = ex.args[1:2];  ex.args[1:2] .= (p, f)  end
             end
@@ -43,10 +45,10 @@ underscores!(ex) = let  uf=:(Fixes.UnfixedArgument), ufs=:(Fixes.UnfixedArgument
     elseif isexpr(ex, :.) && length(ex.args) == 2 && (ex.args[1] == :_ || ex.args[2] == :(:_)) # getproperty special case
         ex.head, ex.args = :call, Any[:getproperty, ex.args[1], ex.args[2] == :(:_) ? :_ : ex.args[2]]
         underscores!(ex)
-    elseif isexpr(ex, :ref) && any(is_uf_or_ufs, ex.args) # getindex special case
+    elseif isexpr(ex, :ref) && greenlight2 # getindex special case
         ex.head, ex.args = :call, Any[:getindex; ex.args]
         underscores!(ex)
-    elseif isexpr(ex, :string) && any(is_uf_or_ufs, ex.args) # string special case
+    elseif isexpr(ex, :string) && greenlight2 # string special case
         ex.head, ex.args = :call, Any[:string; ex.args]
         underscores!(ex)
     end
@@ -93,14 +95,14 @@ parameters(T::UnionAll; ignore=0) = parameters(T.body; ignore=ignore+1)
         else  pushfirst!(backargs, Expr(:call, :getindex, :fargs, k)); k-=1  end        
     end
 end
-const Fix1{F,X} = Fix{F,Tuple{X,U},typeof((;))} where {F,X,U<:UnfixedArgument}
-const Fix2{F,X} = Fix{F,Tuple{U,X},typeof((;))} where {F,X,U<:UnfixedArgument}
-const Fix0_2p{F} = let T=Tuple, U=UnfixedArgument, US=UnfixedArgumentSplat, nkw=typeof((;))  # edge case d'oh
-    Union{map(((UA,UB),)->Fix{F,T{U1,U2},nkw} where {F,U1<:UA,U2<:UB}, ((U,U), (U,US), (US,U), (US,US)))...}  end
+const Fix1{F,X} = Fix{F,Tuple{X,UF},typeof((;))} where {F,X,UF<:UnfixedArgument}
+const Fix2{F,X} = Fix{F,Tuple{UF,X},typeof((;))} where {F,X,UF<:UnfixedArgument}
+const Fix0_2p{F} = let T=Tuple, UF=UnfixedArgument, UFS=UnfixedArgumentSplat, nkw=typeof((;))  # edge case d'oh
+    Union{map(((UA,UB),)->Fix{F,T{U1,U2},nkw} where {F,U1<:UA,U2<:UB}, ((UF,UF), (UF,UFS), (UFS,UF), (UFS,UFS)))...}  end
 Fix1(f, x) = Fix(f, x, UnfixedArgument())
 Fix2(f, x) = Fix(f, UnfixedArgument(), x)
-const FixFirst{F,X} = Fix{F,Tuple{X,US},typeof((;))} where {F,X,US<:UnfixedArgumentSplat}
-const FixLast{F,X}  = Fix{F,Tuple{US,X},typeof((;))} where {F,X,US<:UnfixedArgumentSplat}
+const FixFirst{F,X} = Fix{F,Tuple{X,UFS},typeof((;))} where {F,X,UFS<:UnfixedArgumentSplat}
+const FixLast{F,X}  = Fix{F,Tuple{UFS,X},typeof((;))} where {F,X,UFS<:UnfixedArgumentSplat}
 FixFirst(f, x) = Fix(f, x, UnfixedArgumentSplat())
 FixLast(f, x)  = Fix(f, UnfixedArgumentSplat(), x)
 @inline getproperty(f::Union{Fix1,FixFirst}, s::Symbol) = s == :x ? getfield(f, :args)[1] : getfield(f, s) # backwards compatibility
