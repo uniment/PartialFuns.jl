@@ -45,7 +45,6 @@ using Pkg
 pkg"add https://github.com/uniment/Fixes.jl"
 
 using Fixes
-using Fixes: Fix, Fix1, Fix2, FixFirst, FixLast, @underscores
 Fixes.init_repl()
 ```
 
@@ -74,11 +73,11 @@ let f(a...; k...) = (a, (;k...));  f(_, 2, _..., 5, _; a=1)(1, 3, 4, 6; b=2)  en
 let x=(a=1,);  (_.a)(x), (x._)(:a), (_._)(x, :a)  end
 let x=(a=1,);  (_[1])(x), (x[_])(1), (_[_])(x, 1)  end
 let x=reshape(1:9,3,3);  (x[_, 2])(2), (x[_, _])(2, 2), (x[_...])(2, 2)  end
-map("Hello $_ and $_", (:John, :Matt, :Dave), (:Mary, :Susan, :Joanne))
-(_ .> 3)(1:5)'
-(_ .> 1:5)(3)'
-(_ .> 1:5)(5:-1:1)'
-let f(a, b) = a(b);  f.((_ .> 1:5), 5:-1:1)'  end
-let f(a, b) = a(b);  f.((_ .> 3), 5:-1:1)'  end
+map("Hello $_ and $_", (:Mary, :Matt, :Kelly), (:John, :Susan, :Dave))
+(_ .> 2)(1:3)
+(_ .> 1:3)(2)
+(_ .> 1:3)(3:-1:1)
+let f(a, b) = a(b);  f.((_ .> 1:3), 3:-1:1)  end
+let f(a, b) = a(b);  f.((_ .> 2), 3:-1:1)  end
 let f(a, b) = a(b);  f.([_ _^2; _^3 _^4], [1 2; 3 4])  end
 ```
