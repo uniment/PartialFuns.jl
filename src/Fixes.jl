@@ -56,8 +56,8 @@ underscores!(ex) = let  uf=:(Fixes.UnfixedArgument), ufs=:(Fixes.UnfixedArgument
 end
 
 import Base: show, length, iterate, getproperty
-struct UnfixedArgument{T} end;      UnfixedArgument(T) = UnfixedArgument{T}();              UnfixedArgument() = UnfixedArgument(Any)
-struct UnfixedArgumentSplat{T} end; UnfixedArgumentSplat(T) = UnfixedArgumentSplat{T}();    UnfixedArgumentSplat() = UnfixedArgumentSplat(Any)
+struct UnfixedArgument{T}       UnfixedArgument(T) = new{T}();      UnfixedArgument() = new{Any}()      end
+struct UnfixedArgumentSplat{T}  UnfixedArgumentSplat(T) = new{T}(); UnfixedArgumentSplat() = new{Any}() end
 show(io::IO, ::UnfixedArgument{T}) where T = print(io, T≡Any ? "_" : "_::$T")
 show(io::IO, ::UnfixedArgumentSplat{T}) where T = print(io, T≡Any ? "_..." : "_::$T...")
 length(::Union{UnfixedArgument,UnfixedArgumentSplat}) = 1
