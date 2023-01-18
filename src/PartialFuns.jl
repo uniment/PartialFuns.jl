@@ -67,7 +67,7 @@ const  ArgTypes = Union{FixedArg, UnfixedArgOrSplat}
 length(a::FixedArg) = length(a.x)
 iterate(a::FixedArg, t=a.x) = Iterators.peel(t)
 length(::UnfixedArgOrSplat) = 1
-iterate(a::UnfixedArgOrSplat, n=1) = a
+iterate(a::UnfixedArgOrSplat, n=1) = n ≠ 1 ? nothing : (a, 0)
 """```
     PartialFun(f, args...; kws...)
 ```
@@ -87,6 +87,8 @@ end
 @inline PartialFun(args...; kws...) = let kws=(;kws...), args=map(a->a isa UnfixedArgOrSplat ? a : FixedArg(a), args)
     PartialFun{typeof(args), typeof(kws)}(args, kws)
 end
+length(::PartialFun) = 1
+iterate(f::PartialFun, n=1) = n ≠ 1 ? nothing : (f, 0)
 _show(x::FixedArg) = repr(x.x)
 _show(::UnfixedArg{T}) where T = T≡Any ? "_" : "_::$T"
 _show(::UnfixedArgSplat{T}) where T = T≡Any ? "_..." : "_::$T..."

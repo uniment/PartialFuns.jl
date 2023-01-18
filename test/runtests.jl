@@ -66,7 +66,6 @@ using Test
             @test f(_...; a=:a)(a=:b) === ((), (a=:b,))
         end
         @test (_ .> 1:5)(3) == [1, 1, 0, 0, 0]
-        @test (_ .> 3)(1:5) == [0, 0, 0, 1, 1]
         let f(a, b) = a(b)
             @test f.(_ .> (1:5), 5:-1:1) == f.(.>(1:5), 5:-1:1) == [1, 1, 0, 0, 0]
         end
@@ -79,6 +78,7 @@ using Test
         @test let f=_::Int; f(0) === 0 end
         @test let f=_; f(5) === 5 end
         @test let f(a, b, c) = a+b+c;  f(_::Int...)(1, 2, 3)  end === 6
+        @test let f(a, b) = a(b);  f.(_+1, 1:3)  end  ==  [2, 3, 4]
         @test (_ .> 2)(1:4) == Bool[0, 0, 1, 1]
         @test (_ .> 1:4)(3) == Bool[1, 1, 0, 0]
         @test (_ .> 1:4)(4:-1:1) == Bool[1, 1, 0, 0]
