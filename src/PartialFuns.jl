@@ -22,7 +22,6 @@ underscores!(ex) = let  uf=:(PartialFuns.UnfixedArg), ufs=:(PartialFuns.UnfixedA
     if isexpr(ex, :call) && greenlight
         isexpr(ex.args[1], :...) && error("cannot splat functions into call")
         if string(ex.args[1])[1] != '.'  # normal function call; avoid the broadcasting infix operators
-            findfirst(x->isexpr(:..., x), ex.args) == findlast(x->isexpr(:..., x), ex.args) || error("only one _... splat permitted")
             if length(ex.args) > 2 && isexpr(ex.args[2], :parameters) # pull parameters forward
                 ex.args[1:2] .= reverse(ex.args[1:2])
             end
@@ -67,6 +66,8 @@ length(a::FixedArg) = length(a.x)
 iterate(a::FixedArg, t=a.x) = Iterators.peel(t)
 length(::UnfixedArgOrSplat) = 1
 broadcastable(a::UnfixedArgOrSplat) = Ref(a)
+parameters(T::DataType; discard=0) = Tuple(T.parameters)[1:end-discard]
+parameters(T::UnionAll; discard=0) = parameters(T.body; ignore=discard+1)
 """```
     PartialFun(f, args...; kws...)
 ```
@@ -82,7 +83,11 @@ julia> f(2)
 ```"""
 struct PartialFun{A<:Tuple{Vararg{ArgTypes}}, K<:NamedTuple} #<: Function # I want pretty-printing for now, but we should subtype Function
     args::A; kws::K
-    @inline PartialFun{A,K}(args::A, kws::K) where {A,K} = new{A, K}(args, kws)
+    @inline PartialFun{A,K}(args::A, kws::K) where {A,K} = let Ts=parameters(A)
+        count(T->T<:UnfixedArgSplat, Ts) > 1 && error("cannot have more than one unfixed argument splat")
+        Ts[1] <: UnfixedArgSplat && error("cannot splat unfixed functions")
+        new{A, K}(args, kws)
+    end
 end
 @inline PartialFun(args...; kws...) = let kws=(;kws...), args=map(a->a isa UnfixedArgOrSplat ? a : FixedArg(a), args)
     PartialFun{typeof(args), typeof(kws)}(args, kws)
@@ -93,7 +98,7 @@ _show(::UnfixedArg{T}) where T = T≡Any ? "_" : "_::$T"
 _show(::UnfixedArgSplat{T}) where T = T≡Any ? "_..." : "_::$T..."
 _showargs(args::Tuple) = join(map(_show, args), ", ")
 _showargs(kws::NamedTuple) = isempty(kws) ? "" : "; " * join(("$k = " * repr(v) for (k,v) = pairs(kws)), ", ")
-show(io::IO, f::PartialFun) = print(io, _show(f.args[1]), "(", _showargs(f.args[2:end]), all(a->a isa FixedArg, f.args[2:end]) ? "; _" : "", _showargs(f.kws), ")")
+show(io::IO, f::PartialFun) = print(io, _show(f.args[1]), "(", _showargs(f.args[2:end]), all(a->a isa FixedArg, f.args) ? "; _" : "", _showargs(f.kws), ")")
 show(io::IO, f::PartialFun{T} where {T<:Tuple{FixedArg{typeof(getproperty)}, Vararg{ArgTypes}}}) = print(io, _show(f.args[2]), ".", _show(f.args[3]))
 show(io::IO, f::PartialFun{T} where {T<:Tuple{FixedArg{typeof(getindex)}, Vararg{ArgTypes}}}) = 
     print(io, _show(f.args[2]), "[", _showargs(f.args[3:end]), _showargs(f.kws), "]")
@@ -103,23 +108,21 @@ show(io::IO, f::PartialFun{T} where {T<:Tuple{FixedArg{typeof(string)}, Vararg{A
     end
 @inline (f::PartialFun)(args...; kws...) = call(_assemble_args(getfield(f, :args), args)...; getfield(f, :kws)..., kws...)
 @inline call(args...; kws...) = let (f, args...) = args;  f(args...; kws...)  end
-parameters(T::DataType; ignore=0) = Tuple(T.parameters)[1:end-ignore]
-parameters(T::UnionAll; ignore=0) = parameters(T.body; ignore=ignore+1)
-@inline @generated _assemble_args(fargs::T1, args::T2) where {T1<:Tuple, T2<:Tuple} = let out_ex = Expr(:tuple)
-    t1, t2 = map(parameters, (T1, T2)) 
+@inline @generated _assemble_args(fargs::TFA, args::TA) where {TFA<:Tuple, TA<:Tuple} = let out_ex = Expr(:tuple)
+    T1s, T2s = map(parameters, (TFA, TA)) 
     i, j = 1, 1
     while true # front args
-        if i > length(t1);  j > length(t2) || error("too many arguments"); return out_ex  end
-        if t1[i] <: UnfixedArg;  push!(out_ex.args, let a=:(args[$j]), T=parameters(t1[i])[1]; T≡Any ? a : :($a::$T) end); i+=1; j+=1
-        elseif t1[i] <: UnfixedArgSplat;  break # switch to filling in back args
-        else  push!(out_ex.args, :(fargs[$i].x)); i+=1  end
+        if i > length(T1s);  j > length(T2s) || error("too many arguments"); return out_ex  end
+        if T1s[i] <: UnfixedArg;  push!(out_ex.args, let a=:(getfield(args, $j)), T=parameters(T1s[i])[1]; T≡Any ? a : :($a::$T) end); i+=1; j+=1
+        elseif T1s[i] <: UnfixedArgSplat;  break # switch to filling in back args
+        else  push!(out_ex.args, :(getfield(getfield(fargs, $i), :x))); i+=1  end
     end
-    k, l, backargs = lastindex(t1), lastindex(t2), []
+    k, l, backargs = lastindex(T1s), lastindex(T2s), []
     while true # back args
         if l < j  out_ex.args = Any[out_ex.args; backargs]; return out_ex  end
-        if t1[k] <: UnfixedArg;  pushfirst!(backargs, let a=:(args[$l]), T=parameters(t1[k])[1]; T≡Any ? a : :($a::$T) end); k-=1; l-=1
-        elseif t1[k] <: UnfixedArgSplat; pushfirst!(backargs, let a=:(args[$l]), T=parameters(t1[k])[1]; T≡Any ? a : :($a::$T) end); l-=1
-        else  pushfirst!(backargs, :(fargs[$k].x)); k-=1  end        
+        if T1s[k] <: UnfixedArg;  pushfirst!(backargs, let a=:(getfield(args, $l)), T=parameters(T1s[k])[1]; T≡Any ? a : :($a::$T) end); k-=1; l-=1
+        elseif T1s[k] <: UnfixedArgSplat; pushfirst!(backargs, let a=:(getfield(args, $l)), T=parameters(T1s[k])[1]; T≡Any ? a : :($a::$T) end); l-=1
+        else  pushfirst!(backargs, :(getfield(getfield(fargs, $k), :x))); k-=1  end        
     end
 end
 const Fix1{F,X} = PartialFun{Tuple{FixedArg{F},FixedArg{X},UnfixedArg{UF}},typeof((;))} where {F,X,UF}

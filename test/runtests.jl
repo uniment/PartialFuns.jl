@@ -22,10 +22,8 @@ using Test
         @test _+1 ≡ _+1
         @test _+1 == _+1
         let x=(a=1,)
-            @test (_.a)(x)  === 1
-            @test (x._)(:a) === 1
-            @test (_[1])(x) === 1
-            @test (x[_])(1) === 1
+            @test (_.a)(x)  === 1 && (x._)(:a) === 1
+            @test (_[1])(x) === 1 && (x[_])(1) === 1
         end
         @test _[_, _](ones(2, 2), 2, 2) === 1.0
         @test _[_...](ones(2, 2), 2, 2) === 1.0
@@ -84,6 +82,8 @@ using Test
         @test (_ .> 1:4)(4:-1:1) == Bool[1, 1, 0, 0]
         @test let f(a, b) = a(b);  f.((_ .> 1:4), 4:-1:1)  end == Bool[1, 1, 0, 0]
         @test let f(a, b) = a(b);  f.((_ .> 2), 4:-1:1)  end == Bool[1, 1, 0, 0]
+        @test_throws "cannot have more than one unfixed argument splat" map(_..., _...)
+        @test_throws "cannot splat unfixed functions" PartialFun(UnfixedArgSplat(), 1, 2)
     end
     let underscores! = PartialFuns.underscores!
         @test_throws "cannot splat functions into call" underscores!(:( (_...)(_) ))
