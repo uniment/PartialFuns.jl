@@ -1,4 +1,4 @@
-*Fixes.jl*
+*PartialFuns.jl*
 ---
 
 A more refined demo for underscore partial application syntax, à la [PR#24990](https://github.com/JuliaLang/julia/pull/24990).
@@ -42,10 +42,10 @@ Run this in your REPL:
 
 ```julia
 using Pkg
-pkg"add https://github.com/uniment/Fixes.jl"
+pkg"add https://github.com/uniment/PartialFuns.jl"
 
-using Fixes
-Fixes.init_repl()
+using PartialFuns
+PartialFuns.init_repl()
 ```
 
 Then the fun begins!
