@@ -122,14 +122,14 @@ parameters(T::UnionAll; ignore=0) = parameters(T.body; ignore=ignore+1)
         else  pushfirst!(backargs, :(fargs[$k].x)); k-=1  end        
     end
 end
-const Fix1{F,X} = PartialFun{Tuple{FixedArg{F},FixedArg{X},UF},typeof((;))} where {F,X,UF<:UnfixedArg}
-const Fix2{F,X} = PartialFun{Tuple{FixedArg{F},UF,FixedArg{X}},typeof((;))} where {F,X,UF<:UnfixedArg}
+const Fix1{F,X} = PartialFun{Tuple{FixedArg{F},FixedArg{X},UnfixedArg{UF}},typeof((;))} where {F,X,UF}
+const Fix2{F,X} = PartialFun{Tuple{FixedArg{F},UnfixedArg{UF},FixedArg{X}},typeof((;))} where {F,X,UF}
 Fix1(f, x) = PartialFun(f, x, UnfixedArg())
 Fix2(f, x) = PartialFun(f, UnfixedArg(), x)
 (f::Fix1)(y; kws...) = getfield(getfield(getfield(f, :args), 1), :x)(getfield(getfield(getfield(f, :args), 2), :x), y; kws...) # specialization
 (f::Fix2)(y; kws...) = getfield(getfield(getfield(f, :args), 1), :x)(y, getfield(getfield(getfield(f, :args), 3), :x); kws...) # specialization
-const FixFirst{F,X} = PartialFun{Tuple{FixedArg{F},FixedArg{X},UFS},typeof((;))} where {F,X,UFS<:UnfixedArgSplat}
-const FixLast{F,X}  = PartialFun{Tuple{FixedArg{F},UFS,FixedArg{X}},typeof((;))} where {F,X,UFS<:UnfixedArgSplat}
+const FixFirst{F,X} = PartialFun{Tuple{FixedArg{F},FixedArg{X},UnfixedArgSplat{UF}},typeof((;))} where {F,X,UF}
+const FixLast{F,X}  = PartialFun{Tuple{FixedArg{F},UnfixedArgSplat{UF},FixedArg{X}},typeof((;))} where {F,X,UF}
 FixFirst(f, x) = PartialFun(f, x, UnfixedArgSplat())
 FixLast(f, x)  = PartialFun(f, UnfixedArgSplat(), x)
 @inline getproperty(f::Union{Fix1,FixFirst}, s::Symbol) = s ∈ (:f, :x) ? getfield(f, :args)[s≡:f ? 1 : 2].x : getfield(f, s) # backwards compatibility
