@@ -85,7 +85,7 @@ using Test
         @test let f(a, b) = a(b);  f.((_ .> 1:4), 4:-1:1)  end == Bool[1, 1, 0, 0]
         @test let f(a, b) = a(b);  f.((_ .> 2), 4:-1:1)  end == Bool[1, 1, 0, 0]
     end
-    let underscores! = Fixes.underscores!
+    let underscores! = PartialFuns.underscores!
         @test_throws "cannot splat functions into call" underscores!(:( (_...)(_) ))
         @test_throws "cannot splat functions into call" underscores!(:( (_...).(_) ))
         @test_throws "cannot splat functions into call" underscores!(:( (_::Int...)(_) ))

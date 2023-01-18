@@ -1,12 +1,12 @@
-module Fixes 
+module PartialFuns 
 export PartialFun, Fix1, Fix2, FixFirst, FixLast, FixedArg, UnfixedArg, UnfixedArgSplat, @underscores
 using .Meta
 init_repl() = let at=Base.active_repl_backend.ast_transforms; first(at) ≡ underscores! || pushfirst!(at, underscores!); at end
 
 # syntax transform
 macro underscores(ex)  esc(underscores!(ex))  end
-underscores!(ex) = let  uf=:(Fixes.UnfixedArg), ufs=:(Fixes.UnfixedArgSplat),
-                        fix=:(Fixes.PartialFun), broadcaster=:(Fixes.BroadcastPartialFun),
+underscores!(ex) = let  uf=:(PartialFuns.UnfixedArg), ufs=:(PartialFuns.UnfixedArgSplat),
+                        fix=:(PartialFuns.PartialFun), broadcaster=:(PartialFuns.BroadcastPartialFun),
                         unfixarg=:($uf()), unfixargsplat=:($ufs())
     is_uf(ex::Symbol) = ex ≡ :_
     is_uf(ex) = isexpr(ex, :(::)) && is_uf(ex.args[1]) # if we care about performance
