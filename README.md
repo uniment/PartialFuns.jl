@@ -53,7 +53,7 @@ Provides types:
 - `Fix1` and
 - `Fix2` with backward compatibility, and
 - `FixFirst` and 
--`FixLast` 
+- `FixLast` 
 
 
 ## Getting Started
