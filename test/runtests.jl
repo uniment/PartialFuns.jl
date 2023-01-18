@@ -92,4 +92,5 @@ using Test
         @test_throws "cannot splat functions into call" underscores!(:( (_::Int...).(_) ))
         @test_throws TypeError eval(underscores!(:( let f=_::Int; f(2.5) end )))
     end
+    @test_broken Fix1(+, 1) isa Function  # this is how you know you've made it.
 end

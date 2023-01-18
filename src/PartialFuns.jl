@@ -52,7 +52,7 @@ underscores!(ex) = let  uf=:(PartialFuns.UnfixedArg), ufs=:(PartialFuns.UnfixedA
         ex.head, ex.args = :call, Any[:string; ex.args]
         underscores!(ex)
     end
-    if isexpr(ex, :(=));  ex.args[2] = underscores!(ex.args[2])  # don't replace underscores being assigned to
+    if isexpr(ex, :(=)) && (ex.args[1] ≡ :_ || isexpr(ex.args[1], :tuple));  ex.args[2] = underscores!(ex.args[2])  # don't replace underscores being assigned to
     else  @. ex.args = underscores!(ex.args)  end
     ex
 end
