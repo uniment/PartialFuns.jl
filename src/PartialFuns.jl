@@ -68,6 +68,11 @@ length(a::FixedArg) = length(a.x)
 iterate(a::FixedArg, t=a.x) = Iterators.peel(t)
 length(::UnfixedArgOrSplat) = 1
 iterate(a::UnfixedArgOrSplat, n=1) = a
+"""```
+    PartialFun(f, args...; kws...)
+```
+Construct a partially-applied function which calls `f` on the specified arguments. To specify unfilled arguments, use `UnfixedArg(T)` or `UnfixedArgSplat(T)`, where `T` is the type to assert the unfilled argument take. To avoid type assertion, use `UnfixedArg()` or `UnfixedArgSplat()`.
+"""
 struct PartialFun{A<:Tuple{Vararg{ArgTypes}}, K<:NamedTuple} #<: Function # I want pretty-printing for now, but we should subtype Function
     args::A; kws::K
     @inline PartialFun{A,K}(args::A, kws::K) where {A,K} = new{A, K}(args, kws)
@@ -119,15 +124,16 @@ FixFirst(f, x) = PartialFun(f, x, UnfixedArgSplat())
 FixLast(f, x)  = PartialFun(f, UnfixedArgSplat(), x)
 @inline getproperty(f::Union{Fix1,FixFirst}, s::Symbol) = s ∈ (:f, :x) ? getfield(f, :args)[s≡:f ? 1 : 2].x : getfield(f, s) # backwards compatibility
 @inline getproperty(f::Union{Fix2,FixLast},  s::Symbol) = s ∈ (:f, :x) ? getfield(f, :args)[s≡:f ? 1 : 3].x : getfield(f, s) # backwards compatibility
-(f::Fix1)(y) = getfield(getfield(getfield(f, :args), 1), :x)(getfield(getfield(getfield(f, :args), 2), :x), y) # specialization
-(f::Fix2)(y) = getfield(getfield(getfield(f, :args), 1), :x)(y, getfield(getfield(getfield(f, :args), 3), :x)) # specialization
+(f::Fix1)(y; kws...) = getfield(getfield(getfield(f, :args), 1), :x)(getfield(getfield(getfield(f, :args), 2), :x), y; kws...) # specialization
+(f::Fix2)(y; kws...) = getfield(getfield(getfield(f, :args), 1), :x)(y, getfield(getfield(getfield(f, :args), 3), :x); kws...) # specialization
 struct BroadcastPartialFun{A,K} f::PartialFun{A,K} end
 (bf::BroadcastPartialFun)(args...; kws...)= let args = _assemble_args(bf.f.args, args)
     Broadcast.BroadcastFunction(args[1])(args[2:end]...; bf.f.kws..., kws...)
 end
 show(io::IO, bf::BroadcastPartialFun) = print(io, _show(bf.f.args[1]), ".(", _showargs(bf.f.args[2:end]), _showargs(bf.f.kws), ")")
 length(bf::BroadcastPartialFun) = maximum(length, bf.f.args[2:end])
-iterate(bf::BroadcastPartialFun, (i,t)=(1,zip(map(a->length(a)==1 ? Iterators.repeated(a) : Iterators.cycle(a), bf.f.args[2:end])...))) = 
+_tail_init(args) = zip(map(a->length(a) == 1 ? Iterators.repeated(a isa UnfixedArgOrSplat ? a : a.x) : Iterators.cycle(a.x), args)...)
+iterate(bf::BroadcastPartialFun, (i,t)=(1, _tail_init(bf.f.args[2:end]))) = 
     i > length(bf) ? nothing : let (h,t) = Iterators.peel(t);  PartialFun(bf.f.args[1].x, h...; bf.f.kws...), (i+1, t)  end
 
 end # Fixes

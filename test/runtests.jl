@@ -1,7 +1,7 @@
-using Fixes
+using PartialFuns
 using Test
 
-@testset "Fixes.jl" begin
+@testset "PartialFuns.jl" begin
     @underscores begin
         # PR24990 tests
         @test div(_, 3)(13) === 4
@@ -19,12 +19,21 @@ using Test
         @test split(_, limit=2)("a b c") == ["a","b c"]
         #@test Meta.lower(@__MODULE__, :(f(_...))) == Expr(:error, "invalid underscore argument \"_...\"") fail
         # Additional tests
+        @test _+1 ≡ _+1
+        @test _+1 == _+1
         let x=(a=1,)
+            @test (_.a)(x)  === 1
             @test (x._)(:a) === 1
+            @test (_[1])(x) === 1
             @test (x[_])(1) === 1
         end
         @test _[_, _](ones(2, 2), 2, 2) === 1.0
         @test _[_...](ones(2, 2), 2, 2) === 1.0
+        let f(a,b)=a(b)
+            @test _(1)(_+2)    === 3
+            @test (_+2)(_)(1)  === 3
+            @test _(_)(_+2, 1) === 3
+        end 
         let f=_;  @test f === PartialFun(identity, UnfixedArg())  end
         @test _ + 2 isa Fix2{typeof(+), Int}
         @test _ + 2 === Fix2(+, 2)
@@ -70,11 +79,17 @@ using Test
         @test let f=_::Int; f(0) === 0 end
         @test let f=_; f(5) === 5 end
         @test let f(a, b, c) = a+b+c;  f(_::Int...)(1, 2, 3)  end === 6
+        @test (_ .> 2)(1:4) == Bool[0, 0, 1, 1]
+        @test (_ .> 1:4)(3) == Bool[1, 1, 0, 0]
+        @test (_ .> 1:4)(4:-1:1) == Bool[1, 1, 0, 0]
+        @test let f(a, b) = a(b);  f.((_ .> 1:4), 4:-1:1)  end == Bool[1, 1, 0, 0]
+        @test let f(a, b) = a(b);  f.((_ .> 2), 4:-1:1)  end == Bool[1, 1, 0, 0]
     end
     let underscores! = Fixes.underscores!
         @test_throws "cannot splat functions into call" underscores!(:( (_...)(_) ))
         @test_throws "cannot splat functions into call" underscores!(:( (_...).(_) ))
         @test_throws "cannot splat functions into call" underscores!(:( (_::Int...)(_) ))
         @test_throws "cannot splat functions into call" underscores!(:( (_::Int...).(_) ))
+        @test_throws TypeError eval(underscores!(:( let f=_::Int; f(2.5) end )))
     end
 end
