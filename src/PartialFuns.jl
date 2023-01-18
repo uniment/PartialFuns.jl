@@ -7,7 +7,6 @@ init_repl() = let at=Base.active_repl_backend.ast_transforms; first(at) ≡ unde
 macro underscores(ex)  esc(underscores!(ex))  end
 underscores!(ex) = let  uf=:(PartialFuns.UnfixedArg), ufs=:(PartialFuns.UnfixedArgSplat),
                         fix=:(PartialFuns.PartialFun), broadcaster=:(PartialFuns.BroadcastPartialFun),
-                        unfixarg=:($uf()), unfixargsplat=:($ufs())
     is_uf(ex::Symbol) = ex ≡ :_
     is_uf(ex) = isexpr(ex, :(::)) && is_uf(ex.args[1]) # if we care about performance
     is_ufs(ex) = isexpr(ex, :...) && is_uf(ex.args[1]) # then we will solve issue #47760
@@ -28,7 +27,7 @@ underscores!(ex) = let  uf=:(PartialFuns.UnfixedArg), ufs=:(PartialFuns.UnfixedA
                 ex.args[1:2] .= reverse(ex.args[1:2])
             end
             pushfirst!(ex.args, fix)
-            ex.args .= map(repl_undr, ex.args)#, :_ => unfixarg, :(_...) => unfixargsplat)
+            ex.args .= map(repl_undr, ex.args)
         else # infix operator broadcasting (did you know that .> gets converted to Expr(:., :>) ? wth???)
             newex = Expr(:call)
             newex.args = Any[Symbol(string(ex.args[1])[2:end]); ex.args[2:end]]
@@ -73,7 +72,8 @@ broadcastable(a::UnfixedArgOrSplat) = Ref(a)
 ```
 Construct a partially-applied function which calls `f` on the specified arguments. To specify unfilled arguments, use `UnfixedArg(T)` or `UnfixedArgSplat(T)`, where `T` is the type to assert the unfilled argument take. To avoid type assertion, use `UnfixedArg()` or `UnfixedArgSplat()`.
 
-Example:```
+Example:
+```
 julia> f = PartialFun(+, 1, UnfixedArg())
 +(1, _)
 
