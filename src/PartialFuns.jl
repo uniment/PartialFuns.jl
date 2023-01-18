@@ -94,12 +94,12 @@ _show(::UnfixedArgSplat{T}) where T = T≡Any ? "_..." : "_::$T..."
 _showargs(args::Tuple) = join(map(_show, args), ", ")
 _showargs(kws::NamedTuple) = isempty(kws) ? "" : "; " * join(("$k = " * repr(v) for (k,v) = pairs(kws)), ", ")
 show(io::IO, f::PartialFun) = print(io, _show(f.args[1]), "(", _showargs(f.args[2:end]), all(a->a isa FixedArg, f.args[2:end]) ? "; _" : "", _showargs(f.kws), ")")
-show(io::IO, f::PartialFun{Tuple{FixedArg{typeof(getproperty)}, Vararg{ArgTypes}}}) = print(io, _show(f.args[2]), ".", f.args[3])
-show(io::IO, f::PartialFun{Tuple{FixedArg{typeof(getindex)}, Vararg{ArgTypes}}}) = 
+show(io::IO, f::PartialFun{T} where {T<:Tuple{FixedArg{typeof(getproperty)}, Vararg{ArgTypes}}}) = print(io, _show(f.args[2]), ".", _show(f.args[3]))
+show(io::IO, f::PartialFun{T} where {T<:Tuple{FixedArg{typeof(getindex)}, Vararg{ArgTypes}}}) = 
     print(io, _show(f.args[2]), "[", _showargs(f.args[3:end]), _showargs(f.kws), "]")
-show(io::IO, f::PartialFun{Tuple{FixedArg{typeof(string)}, Vararg{ArgTypes}}}) = 
-    let str(x) = x isa UnfixedArg{Any} ? "\$"*_show(x) : x isa UnfixedArgOrSplat ? "\$("*_show(x)*")" : _show(x)
-        print(io, "\"", map(str, f.args)..., "\"")
+show(io::IO, f::PartialFun{T} where {T<:Tuple{FixedArg{typeof(string)}, Vararg{ArgTypes}}}) = 
+    let str(x) = x isa UnfixedArg{Any} ? "\$"*_show(x) : x isa UnfixedArgOrSplat ? "\$("*_show(x)*")" : x.x
+        print(io, "\"", map(str, f.args[2:end])..., "\"")
     end
 @inline (f::PartialFun)(args...; kws...) = call(_assemble_args(getfield(f, :args), args)...; getfield(f, :kws)..., kws...)
 @inline call(args...; kws...) = let (f, args...) = args;  f(args...; kws...)  end
