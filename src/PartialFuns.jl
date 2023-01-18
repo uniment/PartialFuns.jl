@@ -58,7 +58,7 @@ underscores!(ex) = let  uf=:(PartialFuns.UnfixedArg), ufs=:(PartialFuns.UnfixedA
 end
 
 # types and functions
-import Base: show, length, iterate, getproperty
+import Base: show, length, iterate, getproperty, broadcastable
 struct FixedArg{X} x::X;   FixedArg(x::X) where X = new{X}(x)  end
 struct UnfixedArg{T}       UnfixedArg(T) = new{T}();      UnfixedArg() = new{Any}()      end
 struct UnfixedArgSplat{T}  UnfixedArgSplat(T) = new{T}(); UnfixedArgSplat() = new{Any}() end
@@ -67,7 +67,7 @@ const  ArgTypes = Union{FixedArg, UnfixedArgOrSplat}
 length(a::FixedArg) = length(a.x)
 iterate(a::FixedArg, t=a.x) = Iterators.peel(t)
 length(::UnfixedArgOrSplat) = 1
-iterate(a::UnfixedArgOrSplat, n=1) = n ≠ 1 ? nothing : (a, 0)
+broadcastable(a::UnfixedArgOrSplat) = Ref(a)
 """```
     PartialFun(f, args...; kws...)
 ```
@@ -87,14 +87,13 @@ end
 @inline PartialFun(args...; kws...) = let kws=(;kws...), args=map(a->a isa UnfixedArgOrSplat ? a : FixedArg(a), args)
     PartialFun{typeof(args), typeof(kws)}(args, kws)
 end
-length(::PartialFun) = 1
-iterate(f::PartialFun, n=1) = n ≠ 1 ? nothing : (f, 0)
+broadcastable(f::PartialFun) = Ref(f)
 _show(x::FixedArg) = repr(x.x)
 _show(::UnfixedArg{T}) where T = T≡Any ? "_" : "_::$T"
 _show(::UnfixedArgSplat{T}) where T = T≡Any ? "_..." : "_::$T..."
 _showargs(args::Tuple) = join(map(_show, args), ", ")
 _showargs(kws::NamedTuple) = isempty(kws) ? "" : "; " * join(("$k = " * repr(v) for (k,v) = pairs(kws)), ", ")
-show(io::IO, f::PartialFun) = print(io, _show(f.args[1]), "(", _showargs(f.args[2:end]), _showargs(f.kws), ")")
+show(io::IO, f::PartialFun) = print(io, _show(f.args[1]), "(", _showargs(f.args[2:end]), all(a->a isa FixedArg, f.args[2:end]) ? "; _" : "", _showargs(f.kws), ")")
 show(io::IO, f::PartialFun{Tuple{FixedArg{typeof(getproperty)}, Vararg{ArgTypes}}}) = print(io, _show(f.args[2]), ".", f.args[3])
 show(io::IO, f::PartialFun{Tuple{FixedArg{typeof(getindex)}, Vararg{ArgTypes}}}) = 
     print(io, _show(f.args[2]), "[", _showargs(f.args[3:end]), _showargs(f.kws), "]")
