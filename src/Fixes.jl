@@ -1,15 +1,16 @@
 module Fixes 
-export Fix, Fix1, Fix2, FixFirst, FixLast, UnfixedArgument, UnfixedArgumentSplat, @underscores
-using .Meta, REPL
+export PartialFun, Fix1, Fix2, FixFirst, FixLast, FixedArg, UnfixedArg, UnfixedArgSplat, @underscores
+using .Meta
 init_repl() = let at=Base.active_repl_backend.ast_transforms; first(at) ≡ underscores! || pushfirst!(at, underscores!); at end
 
+# syntax transform
 macro underscores(ex)  esc(underscores!(ex))  end
-underscores!(ex) = let  uf=:(Fixes.UnfixedArgument), ufs=:(Fixes.UnfixedArgumentSplat),
-                        fix=:(Fixes.Fix), broadcaster=:(Fixes.BroadcastFix),
+underscores!(ex) = let  uf=:(Fixes.UnfixedArg), ufs=:(Fixes.UnfixedArgSplat),
+                        fix=:(Fixes.PartialFun), broadcaster=:(Fixes.BroadcastPartialFun),
                         unfixarg=:($uf()), unfixargsplat=:($ufs())
     is_uf(ex::Symbol) = ex ≡ :_
-    is_uf(ex) = isexpr(ex, :(::)) && is_uf(ex.args[1])
-    is_ufs(ex) = isexpr(ex, :...) && is_uf(ex.args[1])
+    is_uf(ex) = isexpr(ex, :(::)) && is_uf(ex.args[1]) # if we care about performance
+    is_ufs(ex) = isexpr(ex, :...) && is_uf(ex.args[1]) # then we will solve issue #47760
     is_uf_or_ufs(ex) = is_uf(ex) || is_ufs(ex)
     repl_undr(ex::Symbol, start=ex) = is_uf(ex) ? (ex ≡ start ? :($uf()) : :($ufs())) : ex
     repl_undr(ex, start=ex) = if isexpr(ex, :(::)) && is_uf(ex.args[1]);  ex ≡ start ? :($uf($(ex.args[2]))) : :($ufs($(ex.args[2])))
@@ -18,14 +19,13 @@ underscores!(ex) = let  uf=:(Fixes.UnfixedArgument), ufs=:(Fixes.UnfixedArgument
 
     is_uf_or_ufs(ex) && return Expr(:call, fix, :identity, repl_undr(ex))
     ex isa Expr && !(isexpr(ex, :using) || isexpr(ex, :quote)) || return ex
-    greenlight1 = any(is_uf_or_ufs, ex.args[2:end])
-    isexpr(ex, :call) && greenlight1 && is_uf_or_ufs(ex.args[1]) && error("wut u doin?!?")
-    greenlight2 = greenlight1 || !isempty(ex.args) && is_uf_or_ufs(ex.args[1])
-    if isexpr(ex, :call) && greenlight1
+    greenlight = any(is_uf_or_ufs, ex.args)
+    if isexpr(ex, :call) && greenlight
+        isexpr(ex.args[1], :...) && error("cannot splat functions into call")
         if string(ex.args[1])[1] != '.'  # normal function call; avoid the broadcasting infix operators
-            findfirst(==(:(_...)), ex.args) == findlast(==(:(_...)), ex.args) || error("only one _... splat permitted")
+            findfirst(x->isexpr(:..., x), ex.args) == findlast(x->isexpr(:..., x), ex.args) || error("only one _... splat permitted")
             if length(ex.args) > 2 && isexpr(ex.args[2], :parameters) # pull parameters forward
-                let (f, p) = ex.args[1:2];  ex.args[1:2] .= (p, f)  end
+                ex.args[1:2] .= reverse(ex.args[1:2])
             end
             pushfirst!(ex.args, fix)
             ex.args .= map(repl_undr, ex.args)#, :_ => unfixarg, :(_...) => unfixargsplat)
@@ -45,10 +45,10 @@ underscores!(ex) = let  uf=:(Fixes.UnfixedArgument), ufs=:(Fixes.UnfixedArgument
     elseif isexpr(ex, :.) && length(ex.args) == 2 && (ex.args[1] == :_ || ex.args[2] == :(:_)) # getproperty special case
         ex.head, ex.args = :call, Any[:getproperty, ex.args[1], ex.args[2] == :(:_) ? :_ : ex.args[2]]
         underscores!(ex)
-    elseif isexpr(ex, :ref) && greenlight2 # getindex special case
+    elseif isexpr(ex, :ref) && greenlight # getindex special case
         ex.head, ex.args = :call, Any[:getindex; ex.args]
         underscores!(ex)
-    elseif isexpr(ex, :string) && greenlight2 # string special case
+    elseif isexpr(ex, :string) && greenlight # string special case
         ex.head, ex.args = :call, Any[:string; ex.args]
         underscores!(ex)
     end
@@ -57,25 +57,39 @@ underscores!(ex) = let  uf=:(Fixes.UnfixedArgument), ufs=:(Fixes.UnfixedArgument
     ex
 end
 
+# types and functions
 import Base: show, length, iterate, getproperty
-struct UnfixedArgument{T}       UnfixedArgument(T) = new{T}();      UnfixedArgument() = new{Any}()      end
-struct UnfixedArgumentSplat{T}  UnfixedArgumentSplat(T) = new{T}(); UnfixedArgumentSplat() = new{Any}() end
-show(io::IO, ::UnfixedArgument{T}) where T = print(io, T≡Any ? "_" : "_::$T")
-show(io::IO, ::UnfixedArgumentSplat{T}) where T = print(io, T≡Any ? "_..." : "_::$T...")
-length(::Union{UnfixedArgument,UnfixedArgumentSplat}) = 1
-iterate(a::Union{UnfixedArgument,UnfixedArgumentSplat}, n=1) = a
-struct Fix{F, A<:Tuple, K<:NamedTuple} #<: Function # I want pretty-printing for now, but we should subtype Function
-    f::F; args::A; kws::K
-    @inline Fix(f::F, args...; kws...) where F = let kws=(; kws...); new{F, typeof(args), typeof(kws)}(f, args, kws) end
+struct FixedArg{X} x::X;   FixedArg(x::X) where X = new{X}(x)  end
+struct UnfixedArg{T}       UnfixedArg(T) = new{T}();      UnfixedArg() = new{Any}()      end
+struct UnfixedArgSplat{T}  UnfixedArgSplat(T) = new{T}(); UnfixedArgSplat() = new{Any}() end
+const  UnfixedArgOrSplat{T} = Union{UnfixedArg{T}, UnfixedArgSplat{T}}
+const  ArgTypes = Union{FixedArg, UnfixedArgOrSplat}
+length(a::FixedArg) = length(a.x)
+iterate(a::FixedArg, t=a.x) = Iterators.peel(t)
+length(::UnfixedArgOrSplat) = 1
+iterate(a::UnfixedArgOrSplat, n=1) = a
+struct PartialFun{A<:Tuple{Vararg{ArgTypes}}, K<:NamedTuple} #<: Function # I want pretty-printing for now, but we should subtype Function
+    args::A; kws::K
+    @inline PartialFun{A,K}(args::A, kws::K) where {A,K} = new{A, K}(args, kws)
 end
-_showargs(args::Tuple) = join(map(repr, args), ", ")
+@inline PartialFun(args...; kws...) = let kws=(;kws...), args=map(a->a isa UnfixedArgOrSplat ? a : FixedArg(a), args)
+    PartialFun{typeof(args), typeof(kws)}(args, kws)
+end
+_show(x::FixedArg) = repr(x.x)
+_show(::UnfixedArg{T}) where T = T≡Any ? "_" : "_::$T"
+_show(::UnfixedArgSplat{T}) where T = T≡Any ? "_..." : "_::$T..."
+_showargs(args::Tuple) = join(map(_show, args), ", ")
 _showargs(kws::NamedTuple) = isempty(kws) ? "" : "; " * join(("$k = " * repr(v) for (k,v) = pairs(kws)), ", ")
-show(io::IO, f::Fix) = print(io, repr(f.f), "(", _showargs(f.args), _showargs(f.kws), ")")
-show(io::IO, f::Fix{typeof(getproperty)}) = print(io, repr(f.args[1]), ".", f.args[2])
-show(io::IO, f::Fix{typeof(getindex)}) = print(io, repr(f.args[1]), "[", _showargs(f.args[2:end]), _showargs(f.kws), "]")
-show(io::IO, f::Fix{typeof(string)}) = let str(x) = x isa UnfixedArgument ? "\$"*repr(x) : x isa UnfixedArgumentSplat ? "\$("*repr(x)*")" : x
-    print(io, "\"", map(str, f.args)..., "\"") end
-@inline (f::Fix{F,A,K})(args...; kws...) where {F,A,K} = f.f(_assemble_args(f.args, args)...; f.kws..., kws...)
+show(io::IO, f::PartialFun) = print(io, _show(f.args[1]), "(", _showargs(f.args[2:end]), _showargs(f.kws), ")")
+show(io::IO, f::PartialFun{Tuple{FixedArg{typeof(getproperty)}, Vararg{ArgTypes}}}) = print(io, _show(f.args[2]), ".", f.args[3])
+show(io::IO, f::PartialFun{Tuple{FixedArg{typeof(getindex)}, Vararg{ArgTypes}}}) = 
+    print(io, _show(f.args[2]), "[", _showargs(f.args[3:end]), _showargs(f.kws), "]")
+show(io::IO, f::PartialFun{Tuple{FixedArg{typeof(string)}, Vararg{ArgTypes}}}) = 
+    let str(x) = x isa UnfixedArg{Any} ? "\$"*_show(x) : x isa UnfixedArgOrSplat ? "\$("*_show(x)*")" : _show(x)
+        print(io, "\"", map(str, f.args)..., "\"")
+    end
+@inline (f::PartialFun)(args...; kws...) = call(_assemble_args(getfield(f, :args), args)...; getfield(f, :kws)..., kws...)
+@inline call(args...; kws...) = let (f, args...) = args;  f(args...; kws...)  end
 parameters(T::DataType; ignore=0) = Tuple(T.parameters)[1:end-ignore]
 parameters(T::UnionAll; ignore=0) = parameters(T.body; ignore=ignore+1)
 @inline @generated _assemble_args(fargs::T1, args::T2) where {T1<:Tuple, T2<:Tuple} = let out_ex = Expr(:tuple)
@@ -83,38 +97,37 @@ parameters(T::UnionAll; ignore=0) = parameters(T.body; ignore=ignore+1)
     i, j = 1, 1
     while true # front args
         if i > length(t1);  j > length(t2) || error("too many arguments"); return out_ex  end
-        if t1[i] <: UnfixedArgument;  push!(out_ex.args, let a=:(args[$j]), T=parameters(t1[i])[1]; T≡Any ? a : :($a::$T) end); i+=1; j+=1
-        elseif t1[i] <: UnfixedArgumentSplat;  break # switch to filling in back args
-        else  push!(out_ex.args, Expr(:call, :getindex, :fargs, i)); i+=1  end
+        if t1[i] <: UnfixedArg;  push!(out_ex.args, let a=:(args[$j]), T=parameters(t1[i])[1]; T≡Any ? a : :($a::$T) end); i+=1; j+=1
+        elseif t1[i] <: UnfixedArgSplat;  break # switch to filling in back args
+        else  push!(out_ex.args, :(fargs[$i].x)); i+=1  end
     end
     k, l, backargs = lastindex(t1), lastindex(t2), []
     while true # back args
         if l < j  out_ex.args = Any[out_ex.args; backargs]; return out_ex  end
-        if t1[k] <: UnfixedArgument;  pushfirst!(backargs, let a=:(args[$l]), T=parameters(t1[k])[1]; T≡Any ? a : :($a::$T) end); k-=1; l-=1
-        elseif t1[k] <: UnfixedArgumentSplat; pushfirst!(backargs, let a=:(args[$l]), T=parameters(t1[k])[1]; T≡Any ? a : :($a::$T) end); l-=1
-        else  pushfirst!(backargs, Expr(:call, :getindex, :fargs, k)); k-=1  end        
+        if t1[k] <: UnfixedArg;  pushfirst!(backargs, let a=:(args[$l]), T=parameters(t1[k])[1]; T≡Any ? a : :($a::$T) end); k-=1; l-=1
+        elseif t1[k] <: UnfixedArgSplat; pushfirst!(backargs, let a=:(args[$l]), T=parameters(t1[k])[1]; T≡Any ? a : :($a::$T) end); l-=1
+        else  pushfirst!(backargs, :(fargs[$k].x)); k-=1  end        
     end
 end
-const Fix1{F,X} = Fix{F,Tuple{X,UF},typeof((;))} where {F,X,UF<:UnfixedArgument}
-const Fix2{F,X} = Fix{F,Tuple{UF,X},typeof((;))} where {F,X,UF<:UnfixedArgument}
-const Fix0_2p{F} = let T=Tuple, UF=UnfixedArgument, UFS=UnfixedArgumentSplat, nkw=typeof((;))  # edge case d'oh
-    Union{map(((UA,UB),)->Fix{F,T{U1,U2},nkw} where {F,U1<:UA,U2<:UB}, ((UF,UF), (UF,UFS), (UFS,UF), (UFS,UFS)))...}  end
-Fix1(f, x) = Fix(f, x, UnfixedArgument())
-Fix2(f, x) = Fix(f, UnfixedArgument(), x)
-const FixFirst{F,X} = Fix{F,Tuple{X,UFS},typeof((;))} where {F,X,UFS<:UnfixedArgumentSplat}
-const FixLast{F,X}  = Fix{F,Tuple{UFS,X},typeof((;))} where {F,X,UFS<:UnfixedArgumentSplat}
-FixFirst(f, x) = Fix(f, x, UnfixedArgumentSplat())
-FixLast(f, x)  = Fix(f, UnfixedArgumentSplat(), x)
-@inline getproperty(f::Union{Fix1,FixFirst}, s::Symbol) = s == :x ? getfield(f, :args)[1] : getfield(f, s) # backwards compatibility
-@inline getproperty(f::Union{Fix2,FixLast},  s::Symbol) = s == :x ? getfield(f, :args)[2] : getfield(f, s) # backwards compatibility
-@inline getproperty(f::Fix0_2p, s::Symbol) = getfield(f, s) # edge case
-(f::Fix1)(y) = f.f(f.x, y) # specialization
-(f::Fix2)(y) = f.f(y, f.x) # specialization
-struct BroadcastFix{F,A,K} f::Fix{F,A,K} end
-(bf::BroadcastFix{F,A,K})(args...; kws...) where {F,A,K} = Broadcast.BroadcastFunction(bf.f.f)(_assemble_args(bf.f.args, args)...; bf.f.kws..., kws...)
-show(io::IO, bf::BroadcastFix) = print(io, repr(bf.f.f), ".(", _showargs(bf.f.args), _showargs(bf.f.kws), ")")
-length(bf::BroadcastFix) = maximum(length, bf.f.args)
-iterate(bf::BroadcastFix, (i,t)=(1,zip(map(a->length(a)==1 ? Iterators.repeated(a) : Iterators.cycle(a), bf.f.args)...))) = 
-    i > length(bf) ? nothing : let (f,t) = Iterators.peel(t);  Fix(bf.f.f, f...; bf.f.kws...), (i+1, t)  end
+const Fix1{F,X} = PartialFun{Tuple{FixedArg{F},FixedArg{X},UF},typeof((;))} where {F,X,UF<:UnfixedArg}
+const Fix2{F,X} = PartialFun{Tuple{FixedArg{F},UF,FixedArg{X}},typeof((;))} where {F,X,UF<:UnfixedArg}
+Fix1(f, x) = PartialFun(f, x, UnfixedArg())
+Fix2(f, x) = PartialFun(f, UnfixedArg(), x)
+const FixFirst{F,X} = PartialFun{Tuple{FixedArg{F},FixedArg{X},UFS},typeof((;))} where {F,X,UFS<:UnfixedArgSplat}
+const FixLast{F,X}  = PartialFun{Tuple{FixedArg{F},UFS,FixedArg{X}},typeof((;))} where {F,X,UFS<:UnfixedArgSplat}
+FixFirst(f, x) = PartialFun(f, x, UnfixedArgSplat())
+FixLast(f, x)  = PartialFun(f, UnfixedArgSplat(), x)
+@inline getproperty(f::Union{Fix1,FixFirst}, s::Symbol) = s ∈ (:f, :x) ? getfield(f, :args)[s≡:f ? 1 : 2].x : getfield(f, s) # backwards compatibility
+@inline getproperty(f::Union{Fix2,FixLast},  s::Symbol) = s ∈ (:f, :x) ? getfield(f, :args)[s≡:f ? 1 : 3].x : getfield(f, s) # backwards compatibility
+(f::Fix1)(y) = getfield(getfield(getfield(f, :args), 1), :x)(getfield(getfield(getfield(f, :args), 2), :x), y) # specialization
+(f::Fix2)(y) = getfield(getfield(getfield(f, :args), 1), :x)(y, getfield(getfield(getfield(f, :args), 3), :x)) # specialization
+struct BroadcastPartialFun{A,K} f::PartialFun{A,K} end
+(bf::BroadcastPartialFun)(args...; kws...)= let args = _assemble_args(bf.f.args, args)
+    Broadcast.BroadcastFunction(args[1])(args[2:end]...; bf.f.kws..., kws...)
+end
+show(io::IO, bf::BroadcastPartialFun) = print(io, _show(bf.f.args[1]), ".(", _showargs(bf.f.args[2:end]), _showargs(bf.f.kws), ")")
+length(bf::BroadcastPartialFun) = maximum(length, bf.f.args[2:end])
+iterate(bf::BroadcastPartialFun, (i,t)=(1,zip(map(a->length(a)==1 ? Iterators.repeated(a) : Iterators.cycle(a), bf.f.args[2:end])...))) = 
+    i > length(bf) ? nothing : let (h,t) = Iterators.peel(t);  PartialFun(bf.f.args[1].x, h...; bf.f.kws...), (i+1, t)  end
 
 end # Fixes

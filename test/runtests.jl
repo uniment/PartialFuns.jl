@@ -1,5 +1,4 @@
 using Fixes
-using Fixes: @underscores, Fix, Fix1, Fix2, FixFirst, FixLast, UnfixedArgument, UnfixedArgumentSplat
 using Test
 
 @testset "Fixes.jl" begin
@@ -18,7 +17,7 @@ using Test
         end
         @test split(_)("a b") == ["a","b"]
         @test split(_, limit=2)("a b c") == ["a","b c"]
-        #@test Meta.lower(@__MODULE__, :(f(_...))) == Expr(:error, "invalid underscore argument \"_...\"") fails this
+        #@test Meta.lower(@__MODULE__, :(f(_...))) == Expr(:error, "invalid underscore argument \"_...\"") fail
         # Additional tests
         let x=(a=1,)
             @test (x._)(:a) === 1
@@ -26,11 +25,16 @@ using Test
         end
         @test _[_, _](ones(2, 2), 2, 2) === 1.0
         @test _[_...](ones(2, 2), 2, 2) === 1.0
-        let f=_;  @test f === Fix(identity, UnfixedArgument())  end
+        let f=_;  @test f === PartialFun(identity, UnfixedArg())  end
         @test _ + 2 isa Fix2{typeof(+), Int}
         @test _ + 2 === Fix2(+, 2)
         @test 1 + _ isa Fix1{typeof(+), <:Number}
         @test 1 + _ === Fix1(+, 1)
+        @test Fix1(+, 1) isa Fix1
+        @test !(Fix1(+, 1) isa Fix2)
+        @test !(Fix1(+, 1) isa FixFirst)
+        @test !(Fix2(+, 2) isa FixLast)
+        @test !(FixFirst(+, 1) isa Fix1)
         @test (_ + 2).f === +
         @test (_ + 2).x === 2
         @test (1 + _).f === +
@@ -40,8 +44,8 @@ using Test
         @test +(_..., 9) isa FixLast{typeof(+), Int}
         @test +(_..., 9) === FixLast(+, 9)
         @test map(_^2, _...) isa FixFirst{typeof(map), typeof(_^2)}
-        let _! = UnfixedArgument(), _!s = UnfixedArgumentSplat()
-            @test +(_, 2, _, _..., 9, _; a=1) === Fix(+, _!, 2, _!, _!s, 9, _!; a=1)
+        let _! = UnfixedArg(), _!s = UnfixedArgSplat()
+            @test +(_, 2, _, _..., 9, _; a=1) === PartialFun(+, _!, 2, _!, _!s, 9, _!; a=1)
         end
         @test "hi $_"("there") === "hi there"
         @test "hi $(_...) and $_"("joe", "mary", "steve", "paul") === "hi joemarysteve and paul"
@@ -63,13 +67,14 @@ using Test
             @test filter(<(2000) ∘ _^2, data) === (43, 40, 1, 25, 19, 32, 35, 14, 13, 5, 11, 27, 24, 32)
         end
         @test +(1, _, 3)(2) === 6
-        @test (_::Int)(0) === 0
-        @test _(5) === 5
+        @test let f=_::Int; f(0) === 0 end
+        @test let f=_; f(5) === 5 end
         @test let f(a, b, c) = a+b+c;  f(_::Int...)(1, 2, 3)  end === 6
     end
     let underscores! = Fixes.underscores!
-        @test_throws "wut u doin?!?" underscores!(:( _(_) ))
-        @test_throws "wut u doin?!?" underscores!(:( (_...)(_) ))
-        @test_throws "wut u doin?!?" underscores!(:( (_::Int...)(_) ))
+        @test_throws "cannot splat functions into call" underscores!(:( (_...)(_) ))
+        @test_throws "cannot splat functions into call" underscores!(:( (_...).(_) ))
+        @test_throws "cannot splat functions into call" underscores!(:( (_::Int...)(_) ))
+        @test_throws "cannot splat functions into call" underscores!(:( (_::Int...).(_) ))
     end
 end
