@@ -34,6 +34,26 @@ julia> map("hi $_", ("Jane", "Harold", "Leanne"))
 ```
 
 
+Support for:
+
+- fixed argument counts
+- varargs
+- non-final varargs
+- type assertion
+- keyword arguments
+- `getindex`
+- `getproperty`
+- `string` interpolation
+- unfixed function name
+- broadcasting
+
+Provides types:
+
+- `PartialFun`, which generalizes
+- `Fix1` and
+- `Fix2` with backward compatibility, and
+- `FixFirst` and 
+-`FixLast` 
 
 
 ## Getting Started
@@ -80,4 +100,5 @@ map("Hello $_ and $_", (:Mary, :Matt, :Kelly), (:John, :Susan, :Dave))
 let f(a, b) = a(b);  f.((_ .> 1:3), 3:-1:1)  end
 let f(a, b) = a(b);  f.((_ .> 2), 3:-1:1)  end
 let f(a, b) = a(b);  f.([_ _^2; _^3 _^4], [1 2; 3 4])  end
+_(_).((sin, cos), (π/2, 0))
 ```
