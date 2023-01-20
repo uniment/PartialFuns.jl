@@ -40,7 +40,7 @@ underscores!(ex) = let  uf=:(PartialFuns.UnfixedArg), ufs=:(PartialFuns.UnfixedA
         popfirst!(ex.args[2].args)
         let (f, p) = ex.args[1:2];  ex.args[1:2] .= (p, f)  end # pull parameters forward
         pushfirst!(ex.args, fix)
-    elseif isexpr(ex, :.) && length(ex.args) == 2 && (ex.args[1] == :_ || ex.args[2] == :(:_)) # getproperty special case
+    elseif isexpr(ex, :.) && length(ex.args) == 2 && (is_uf(ex.args[1]) || ex.args[2] == :(:_)) # getproperty special case
         ex.head, ex.args = :call, Any[:getproperty, ex.args[1], ex.args[2] == :(:_) ? :_ : ex.args[2]]
         underscores!(ex)
     elseif isexpr(ex, :ref) && greenlight # getindex special case
@@ -83,9 +83,9 @@ julia> f(2)
 ```"""
 struct PartialFun{A<:Tuple{Vararg{ArgTypes}}, K<:NamedTuple} #<: Function # I want pretty-printing for now, but we should subtype Function
     args::A; kws::K
-    @inline PartialFun{A,K}(args::A, kws::K) where {A,K} = let Ts=parameters(A)
-        count(T->T<:UnfixedArgSplat, Ts) > 1 && error("cannot have more than one unfixed argument splat")
-        Ts[1] <: UnfixedArgSplat && error("cannot splat unfixed functions")
+    @inline PartialFun{A,K}(args::A, kws::K) where {A,K} = let #Ts=parameters(A) # error checking hurts compile time a lot
+        #count(T->T<:UnfixedArgSplat, Ts) > 1 && error("cannot have more than one unfixed argument splat")
+        #Ts[1] <: UnfixedArgSplat && error("cannot splat unfixed functions")
         new{A, K}(args, kws)
     end
 end
