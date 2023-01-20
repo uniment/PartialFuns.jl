@@ -83,10 +83,11 @@ julia> f(2)
 ```"""
 struct PartialFun{A<:Tuple{Vararg{ArgTypes}}, K<:NamedTuple} #<: Function # I want pretty-printing for now, but we should subtype Function
     args::A; kws::K
-    @inline PartialFun{A,K}(args::A, kws::K) where {A,K} = let #Ts=parameters(A) # error checking hurts compile time a lot
-        #count(T->T<:UnfixedArgSplat, Ts) > 1 && error("cannot have more than one unfixed argument splat")
-        #Ts[1] <: UnfixedArgSplat && error("cannot splat unfixed functions")
-        new{A, K}(args, kws)
+    @inline PartialFun{A,K}(args::A, kws::K) where {A<:Tuple{Vararg{Union{FixedArg,UnfixedArg}}},K} = new{A,K}(args, kws) # no splat specialization
+    @inline PartialFun{A,K}(args::A, kws::K) where {A,K} = let Ts=parameters(A) # splat requires more error checks
+        count(T->T<:UnfixedArgSplat, Ts) > 1 && error("cannot have more than one unfixed argument splat")
+        Ts[1] <: UnfixedArgSplat && error("cannot splat unfixed functions")
+        new{A,K}(args, kws)
     end
 end
 @inline PartialFun(args...; kws...) = let kws=(;kws...), args=map(a->a isa UnfixedArgOrSplat ? a : FixedArg(a), args)
