@@ -42,7 +42,15 @@ underscores!(ex) = let  uf=:(PartialFuns.UnfixedArg), ufs=:(PartialFuns.UnfixedA
         pushfirst!(ex.args, fix)
     elseif isexpr(ex, :.) && length(ex.args) == 2 && (is_uf(ex.args[1]) || ex.args[2] == :(:_)) # getproperty special case
         ex.head, ex.args = :call, Any[:getproperty, ex.args[1], ex.args[2] == :(:_) ? :_ : ex.args[2]]; underscores!(ex)
-    elseif greenlight # some special cases
+    elseif isexpr(ex, :tuple) && any(x->isexpr(x, :(=)) && is_uf(x.args[2]), ex.args) # NamedTuple special case 1
+        k, v = map(x->QuoteNode(x.args[1]), ex.args), map(x->length(x.args)>1 ? (is_uf(x.args[2]) ? repl_undr(x.args[2]) : x.args[2]) : x.args[1], ex.args)
+        newex = :(NamedTuple{($(k...),)} ∘ $fix(tuple, $(v...)))
+        ex.head, ex.args = newex.head, newex.args; underscores!(ex)
+    elseif isexpr(ex, :tuple) && length(ex.args) == 1 && isexpr(ex.args[1], :parameters) && any(x->isexpr(x, :kw) && is_uf(x.args[2]), ex.args[1].args) # NamedTuple special case 2
+        k, v = map(x->isexpr(x, :kw) ? QuoteNode(x.args[1]) : QuoteNode(x), ex.args[1].args), map(x->isexpr(x, :kw) ? repl_undr(x.args[2]) : x.args[1], ex.args[1].args)
+        newex = :(NamedTuple{($(k...),)} ∘ $fix(tuple, $(v...)))
+        ex.head, ex.args = newex.head, newex.args; underscores!(ex)
+    elseif greenlight # moar special cases
         flag = true
         if isexpr(ex, :ref);  ex.head, ex.args = :call, Any[:getindex; ex.args] # getindex special case
         elseif isexpr(ex, :string);  ex.head, ex.args = :call, Any[:string; ex.args] # string special case
@@ -50,10 +58,12 @@ underscores!(ex) = let  uf=:(PartialFuns.UnfixedArg), ufs=:(PartialFuns.UnfixedA
         elseif isexpr(ex, :vect);  ex.head, ex.args = :call, Any[:(Base.vect); ex.args] # vect special case
         elseif isexpr(ex, :vcat);  ex.head, ex.args = :call, Any[:vcat; ex.args] # vcat special case
         elseif isexpr(ex, Symbol("'"));  ex.head, ex.args = :call, Any[:adjoint; ex.args] # adjoint special case
+        elseif isexpr(ex, :curly);  ex.head, ex.args = :call, Any[:(Core.apply_type); ex.args] # apply_type special case
         else  flag = false  end
         flag && underscores!(ex)
     end
-    if isexpr(ex, :(=)) && (ex.args[1] ≡ :_ || isexpr(ex.args[1], :tuple));  ex.args[2] = underscores!(ex.args[2])  # don't replace underscores being assigned to
+    if isexpr(ex, :(=)) && (ex.args[1] ≡ :_ || isexpr(ex.args[1], :tuple) || isexpr(ex.args[1], :call)) || isexpr(ex, (:function, :->))
+        ex.args[2] = underscores!(ex.args[2])  # don't replace underscores being assigned to, or function definitions
     else  @. ex.args = underscores!(ex.args)  end
     ex
 end
