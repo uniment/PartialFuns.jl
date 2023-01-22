@@ -62,7 +62,7 @@ underscores!(ex) = let  uf=:(PartialFuns.UnfixedArg), ufs=:(PartialFuns.UnfixedA
         else  flag = false  end
         flag && underscores!(ex)
     end
-    if isexpr(ex, :(=)) && (ex.args[1] ≡ :_ || isexpr(ex.args[1], :tuple) || isexpr(ex.args[1], :call)) || isexpr(ex, (:function, :->))
+    if isexpr(ex, (:(=), :(.=))) && (ex.args[1] ≡ :_ || isexpr(ex.args[1], :tuple) || isexpr(ex.args[1], :call)) || isexpr(ex, (:function, :->))
         ex.args[2] = underscores!(ex.args[2])  # don't replace underscores being assigned to, or function definitions
     else  @. ex.args = underscores!(ex.args)  end
     ex

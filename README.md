@@ -99,6 +99,6 @@ map("Hello $_ and $_", (:Mary, :Matt, :Kelly), (:John, :Susan, :Dave))
 (_ .> 1:3)(3:-1:1)
 let f(a, b) = a(b);  f.((_ .> 1:3), 3:-1:1)  end
 let f(a, b) = a(b);  f.((_ .> 2), 3:-1:1)  end
-let f(a, b) = a(b);  f.([_ _^2; _^3 _^4], [1 2; 3 4])  end
+let f(a, b) = a(b);  f.([_^1 _^2; _^3 _^4], [1 2; 3 4])  end
 _(_).((sin, cos), (π/2, 0))
 ```
