@@ -41,14 +41,17 @@ underscores!(ex) = let  uf=:(PartialFuns.UnfixedArg), ufs=:(PartialFuns.UnfixedA
         let (f, p) = ex.args[1:2];  ex.args[1:2] .= (p, f)  end # pull parameters forward
         pushfirst!(ex.args, fix)
     elseif isexpr(ex, :.) && length(ex.args) == 2 && (is_uf(ex.args[1]) || ex.args[2] == :(:_)) # getproperty special case
-        ex.head, ex.args = :call, Any[:getproperty, ex.args[1], ex.args[2] == :(:_) ? :_ : ex.args[2]]
-        underscores!(ex)
-    elseif isexpr(ex, :ref) && greenlight # getindex special case
-        ex.head, ex.args = :call, Any[:getindex; ex.args]
-        underscores!(ex)
-    elseif isexpr(ex, :string) && greenlight # string special case
-        ex.head, ex.args = :call, Any[:string; ex.args]
-        underscores!(ex)
+        ex.head, ex.args = :call, Any[:getproperty, ex.args[1], ex.args[2] == :(:_) ? :_ : ex.args[2]]; underscores!(ex)
+    elseif greenlight # some special cases
+        flag = true
+        if isexpr(ex, :ref);  ex.head, ex.args = :call, Any[:getindex; ex.args] # getindex special case
+        elseif isexpr(ex, :string);  ex.head, ex.args = :call, Any[:string; ex.args] # string special case
+        elseif isexpr(ex, :tuple);  ex.head, ex.args = :call, Any[:tuple; ex.args] # tuple special case
+        elseif isexpr(ex, :vect);  ex.head, ex.args = :call, Any[:(Base.vect); ex.args] # vect special case
+        elseif isexpr(ex, :vcat);  ex.head, ex.args = :call, Any[:vcat; ex.args] # vcat special case
+        elseif isexpr(ex, Symbol("'"));  ex.head, ex.args = :call, Any[:adjoint; ex.args] # adjoint special case
+        else  flag = false  end
+        flag && underscores!(ex)
     end
     if isexpr(ex, :(=)) && (ex.args[1] ≡ :_ || isexpr(ex.args[1], :tuple));  ex.args[2] = underscores!(ex.args[2])  # don't replace underscores being assigned to
     else  @. ex.args = underscores!(ex.args)  end
