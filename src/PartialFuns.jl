@@ -21,7 +21,7 @@ underscores!(ex) = let  uf=:(PartialFuns.UnfixedArg), ufs=:(PartialFuns.UnfixedA
     greenlight = any(is_uf_or_ufs, ex.args)
     if isexpr(ex, :call) && greenlight
         isexpr(ex.args[1], :...) && error("cannot splat functions into call")
-        if string(ex.args[1])[1] != '.'  # normal function call; avoid the broadcasting infix operators
+        if string(ex.args[1])[1] != '.' || ex.args[1] ≡ :..  # normal function call; avoid the broadcasting infix operators
             if length(ex.args) > 2 && isexpr(ex.args[2], :parameters) # pull parameters forward
                 ex.args[1:2] .= reverse(ex.args[1:2])
             end
@@ -52,15 +52,16 @@ underscores!(ex) = let  uf=:(PartialFuns.UnfixedArg), ufs=:(PartialFuns.UnfixedA
         ex.head, ex.args = newex.head, newex.args; underscores!(ex)
     elseif greenlight # moar special cases
         flag = true
-        if isexpr(ex, :ref);  ex.head, ex.args = :call, Any[:getindex; ex.args] # getindex special case
-        elseif isexpr(ex, :string);  ex.head, ex.args = :call, Any[:string; ex.args] # string special case
-        elseif isexpr(ex, :tuple);  ex.head, ex.args = :call, Any[:tuple; ex.args] # tuple special case
-        elseif isexpr(ex, :vect);  ex.head, ex.args = :call, Any[:(Base.vect); ex.args] # vect special case
-        elseif isexpr(ex, :vcat);  ex.head, ex.args = :call, Any[:vcat; ex.args] # vcat special case
-        elseif isexpr(ex, Symbol("'"));  ex.head, ex.args = :call, Any[:adjoint; ex.args] # adjoint special case
-        elseif isexpr(ex, :curly);  ex.head, ex.args = :call, Any[:(Core.apply_type); ex.args] # apply_type special case
+        if isexpr(ex, :ref);  pushfirst!(ex.args, :getindex) # getindex special case
+        elseif isexpr(ex, :string);  pushfirst!(ex.args, :string) # string special case
+        elseif isexpr(ex, :tuple);  pushfirst!(ex.args, :tuple) # tuple special case
+        elseif isexpr(ex, :vect);  pushfirst!(ex.args, :(Base.vect)) # vect special case
+        elseif isexpr(ex, :vcat);  pushfirst!(ex.args, :vcat) # vcat special case
+        elseif isexpr(ex, :hcat);  pushfirst!(ex.args, :hcat) # hcat special case
+        elseif isexpr(ex, Symbol("'"));  pushfirst!(ex.args, :adjoint) # adjoint special case
+        elseif isexpr(ex, :curly);  pushfirst!(ex.args, :(Core.apply_type)) # apply_type special case
         else  flag = false  end
-        flag && underscores!(ex)
+        flag && (ex.head = :call; underscores!(ex))
     end
     if isexpr(ex, (:(=), :(.=))) && (ex.args[1] ≡ :_ || isexpr(ex.args[1], :tuple) || isexpr(ex.args[1], :call)) || isexpr(ex, (:function, :->))
         ex.args[2] = underscores!(ex.args[2])  # don't replace underscores being assigned to, or function definitions

@@ -44,8 +44,22 @@ Support for:
 - `getindex`
 - `getproperty`
 - `string` interpolation
+- `tuple`
+- `NamedTuple`
+- `Base.vect`
+- `vcat`
+- `hcat`
+- `adjoint`
+- `Core.apply_type`
 - unfixed function name
 - broadcasting
+
+Does not support at the moment:
+- `setindex!`
+- `setproperty!`
+- `hvcat`
+- `hvncat`
+- broadcast fusion
 
 Provides types:
 
