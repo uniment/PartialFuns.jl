@@ -98,9 +98,9 @@ julia> f(2)
 struct PartialFun{A<:Tuple{Vararg{ArgTypes}}, K<:NamedTuple} #<: Function # I want pretty-printing for now, but we should subtype Function
     args::A; kws::K
     @inline PartialFun{A,K}(args::A, kws::K) where {A<:Tuple{Vararg{Union{FixedArg,UnfixedArg}}},K} = new{A,K}(args, kws) # no splat specialization
-    @inline PartialFun{A,K}(args::A, kws::K) where {A,K} = let Ts=parameters(A) # splat requires more error checks
-        count(T->T<:UnfixedArgSplat, Ts) > 1 && error("cannot have more than one unfixed argument splat")
-        Ts[1] <: UnfixedArgSplat && error("cannot splat unfixed functions")
+    @inline PartialFun{A,K}(args::A, kws::K) where {A,K} = let # splat requires more error checks
+        sum(a->a isa UnfixedArgSplat, args) > 1 && error("cannot have more than one unfixed argument splat") # count allocates in 1.9 for some reason; using sum
+        args[1] isa UnfixedArgSplat && error("cannot splat unfixed functions")
         new{A,K}(args, kws)
     end
 end
@@ -121,8 +121,7 @@ show(io::IO, f::PartialFun{T} where {T<:Tuple{FixedArg{typeof(string)}, Vararg{A
     let str(x) = x isa UnfixedArg{Any} ? "\$"*_show(x) : x isa UnfixedArgOrSplat ? "\$("*_show(x)*")" : x.x
         print(io, "\"", map(str, f.args[2:end])..., "\"")
     end
-@inline (f::PartialFun)(args...; kws...) = call(_assemble_args(getfield(f, :args), args)...; getfield(f, :kws)..., kws...)
-@inline call(args...; kws...) = let (f, args...) = args;  f(args...; kws...)  end
+@inline (pf::PartialFun)(args...; kws...) = let (f, args...) = _assemble_args(getfield(pf, :args), args); f(args...; getfield(pf, :kws)..., kws...) end
 @inline @generated _assemble_args(fargs::TFA, args::TA) where {TFA<:Tuple, TA<:Tuple} = let out_ex = Expr(:tuple)
     T1s, T2s = map(parameters, (TFA, TA)) 
     i, j = 1, 1
