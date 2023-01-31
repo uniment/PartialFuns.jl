@@ -20,7 +20,6 @@ underscores!(ex) = let  uf=:(PartialFuns.UnfixedArg), ufs=:(PartialFuns.UnfixedA
     ex isa Expr && !(isexpr(ex, :using) || isexpr(ex, :quote)) || return ex
     greenlight = any(is_uf_or_ufs, ex.args)
     if isexpr(ex, :call) && greenlight
-        isexpr(ex.args[1], :...) && error("cannot splat functions into call")
         if string(ex.args[1])[1] != '.' || ex.args[1] ≡ :..  # normal function call; avoid the broadcasting infix operators
             if length(ex.args) > 2 && isexpr(ex.args[2], :parameters) # pull parameters forward
                 ex.args[1:2] .= reverse(ex.args[1:2])
@@ -95,12 +94,12 @@ julia> f = PartialFun(+, 1, UnfixedArg())
 julia> f(2)
 3
 ```"""
-struct PartialFun{A<:Tuple{Vararg{ArgTypes}}, K<:NamedTuple} #<: Function # I want pretty-printing for now, but we should subtype Function
+struct PartialFun{A<:Tuple{Vararg{ArgTypes}}, K<:NamedTuple} <: Function
     args::A; kws::K
     @inline PartialFun{A,K}(args::A, kws::K) where {A<:Tuple{Vararg{Union{FixedArg,UnfixedArg}}},K} = new{A,K}(args, kws) # no splat specialization
     @inline PartialFun{A,K}(args::A, kws::K) where {A,K} = let # splat requires more error checks
         sum(a->a isa UnfixedArgSplat, args) > 1 && error("cannot have more than one unfixed argument splat") # count allocates in 1.9 for some reason; using sum
-        args[1] isa UnfixedArgSplat && error("cannot splat unfixed functions")
+        args[1] isa UnfixedArgSplat && error("cannot splat functions into call")
         new{A,K}(args, kws)
     end
 end
@@ -113,13 +112,14 @@ _show(::UnfixedArg{T}) where T = T≡Any ? "_" : "_::$T"
 _show(::UnfixedArgSplat{T}) where T = T≡Any ? "_..." : "_::$T..."
 _showargs(args::Tuple) = join(map(_show, args), ", ")
 _showargs(kws::NamedTuple) = isempty(kws) ? "" : "; " * join(("$k = " * repr(v) for (k,v) = pairs(kws)), ", ")
-show(io::IO, f::PartialFun) = print(io, _show(f.args[1]), "(", _showargs(f.args[2:end]), all(a->a isa FixedArg, f.args) ? "; _" : "", _showargs(f.kws), ")")
-show(io::IO, f::PartialFun{T} where {T<:Tuple{FixedArg{typeof(getproperty)}, Vararg{ArgTypes}}}) = print(io, _show(f.args[2]), ".", _show(f.args[3]))
-show(io::IO, f::PartialFun{T} where {T<:Tuple{FixedArg{typeof(getindex)}, Vararg{ArgTypes}}}) = 
-    print(io, _show(f.args[2]), "[", _showargs(f.args[3:end]), _showargs(f.kws), "]")
-show(io::IO, f::PartialFun{T} where {T<:Tuple{FixedArg{typeof(string)}, Vararg{ArgTypes}}}) = 
+show(io::IO, pf::PartialFun) = show(io::IO, MIME"text/plain"(), pf)
+show(io::IO, ::MIME"text/plain", pf::PartialFun) = print(io, _show(pf.args[1]), "(", _showargs(pf.args[2:end]), all(a->a isa FixedArg, pf.args) ? "; _" : "", _showargs(pf.kws), ")")
+show(io::IO, ::MIME"text/plain", pf::PartialFun{T} where {T<:Tuple{FixedArg{typeof(getproperty)}, Vararg{ArgTypes}}}) = print(io, _show(pf.args[2]), ".", _show(pf.args[3]))
+show(io::IO, ::MIME"text/plain", pf::PartialFun{T} where {T<:Tuple{FixedArg{typeof(getindex)}, Vararg{ArgTypes}}}) = 
+    print(io, _show(pf.args[2]), "[", _showargs(pf.args[3:end]), _showargs(pf.kws), "]")
+show(io::IO, ::MIME"text/plain", pf::PartialFun{T} where {T<:Tuple{FixedArg{typeof(string)}, Vararg{ArgTypes}}}) = 
     let str(x) = x isa UnfixedArg{Any} ? "\$"*_show(x) : x isa UnfixedArgOrSplat ? "\$("*_show(x)*")" : x.x
-        print(io, "\"", map(str, f.args[2:end])..., "\"")
+        print(io, "\"", map(str, pf.args[2:end])..., "\"")
     end
 @inline (pf::PartialFun)(args...; kws...) = let (f, args...) = _assemble_args(getfield(pf, :args), args); f(args...; getfield(pf, :kws)..., kws...) end
 @inline @generated _assemble_args(fargs::TFA, args::TA) where {TFA<:Tuple, TA<:Tuple} = let out_ex = Expr(:tuple)
@@ -151,14 +151,16 @@ FixFirst(f, x) = PartialFun(f, x, UnfixedArgSplat())
 FixLast(f, x)  = PartialFun(f, UnfixedArgSplat(), x)
 @inline getproperty(f::Union{Fix1,FixFirst}, s::Symbol) = s ∈ (:f, :x) ? getfield(f, :args)[s≡:f ? 1 : 2].x : getfield(f, s) # backwards compatibility
 @inline getproperty(f::Union{Fix2,FixLast},  s::Symbol) = s ∈ (:f, :x) ? getfield(f, :args)[s≡:f ? 1 : 3].x : getfield(f, s) # backwards compatibility
-struct BroadcastPartialFun{A,K} f::PartialFun{A,K} end
-(bf::BroadcastPartialFun)(args...; kws...)= let args = _assemble_args(bf.f.args, args)
-    Broadcast.BroadcastFunction(args[1])(args[2:end]...; bf.f.kws..., kws...)
+struct BroadcastPartialFun{A,K} #<: Function # subtyping Function opts-in to undesirable broadcasting behavior
+    pf::PartialFun{A,K} 
 end
-show(io::IO, bf::BroadcastPartialFun) = print(io, _show(bf.f.args[1]), ".(", _showargs(bf.f.args[2:end]), _showargs(bf.f.kws), ")")
-length(bf::BroadcastPartialFun) = maximum(length, bf.f.args[2:end])
+(bf::BroadcastPartialFun)(args...; kws...)= let args = _assemble_args(bf.pf.args, args)
+    Broadcast.BroadcastFunction(args[1])(args[2:end]...; bf.pf.kws..., kws...)
+end
+show(io::IO, bf::BroadcastPartialFun) = show(io, MIME"text/plain"(), bf)
+show(io::IO, ::MIME"text/plain", bf::BroadcastPartialFun) = print(io, _show(bf.pf.args[1]), ".(", _showargs(bf.pf.args[2:end]), _showargs(bf.pf.kws), ")")
+length(bf::BroadcastPartialFun) = maximum(length, bf.pf.args[2:end])
 _tail_init(args) = zip(map(a->length(a) == 1 ? Iterators.repeated(a isa UnfixedArgOrSplat ? a : a.x) : Iterators.cycle(a.x), args)...)
-iterate(bf::BroadcastPartialFun, (i,t)=(1, _tail_init(bf.f.args[2:end]))) = 
-    i > length(bf) ? nothing : let (h,t) = Iterators.peel(t);  PartialFun(bf.f.args[1].x, h...; bf.f.kws...), (i+1, t)  end
-
+iterate(bf::BroadcastPartialFun, (i,t)=(1, _tail_init(bf.pf.args[2:end]))) = 
+    i > length(bf) ? nothing : let (h,t) = Iterators.peel(t);  PartialFun(bf.pf.args[1].x, h...; bf.pf.kws...), (i+1, t)  end
 end # Fixes

@@ -83,14 +83,11 @@ using Test
         @test let f(a, b) = a(b);  f.((_ .> 1:4), 4:-1:1)  end == Bool[1, 1, 0, 0]
         @test let f(a, b) = a(b);  f.((_ .> 2), 4:-1:1)  end == Bool[1, 1, 0, 0]
         @test_throws "cannot have more than one unfixed argument splat" map(_..., _...)
-        @test_throws "cannot splat unfixed functions" PartialFun(UnfixedArgSplat(), 1, 2)
+        @test_throws "cannot splat functions into call" PartialFun(UnfixedArgSplat(), 1, 2)
+        @test_throws "cannot splat functions into call" (_...)(_)
+        @test_throws "cannot splat functions into call" (_...).(_)
+        @test_throws "cannot splat functions into call" (_::Int...)(_)
+        @test_throws TypeError let f=_::Int; f(2.5) end
+        @test Fix1(+, 1) isa Function  # this is how you know you've made it.
     end
-    let underscores! = PartialFuns.underscores!
-        @test_throws "cannot splat functions into call" underscores!(:( (_...)(_) ))
-        @test_throws "cannot splat functions into call" underscores!(:( (_...).(_) ))
-        @test_throws "cannot splat functions into call" underscores!(:( (_::Int...)(_) ))
-        @test_throws "cannot splat functions into call" underscores!(:( (_::Int...).(_) ))
-        @test_throws TypeError eval(underscores!(:( let f=_::Int; f(2.5) end )))
-    end
-    @test_broken Fix1(+, 1) isa Function  # this is how you know you've made it.
 end
