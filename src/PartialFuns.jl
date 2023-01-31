@@ -121,6 +121,7 @@ show(io::IO, ::MIME"text/plain", pf::PartialFun{T} where {T<:Tuple{FixedArg{type
     let str(x) = x isa UnfixedArg{Any} ? "\$"*_show(x) : x isa UnfixedArgOrSplat ? "\$("*_show(x)*")" : x.x
         print(io, "\"", map(str, pf.args[2:end])..., "\"")
     end
+show(io::IO, ::MIME"text/plain", pf::PartialFun{T} where {T<:Tuple{FixedArg{typeof(tuple)}, Vararg{ArgTypes}}}) = print(io, "(", _showargs(pf.args[2:end]), ")")
 @inline (pf::PartialFun)(args...; kws...) = let (f, args...) = _assemble_args(getfield(pf, :args), args); f(args...; getfield(pf, :kws)..., kws...) end
 @inline @generated _assemble_args(fargs::TFA, args::TA) where {TFA<:Tuple, TA<:Tuple} = let out_ex = Expr(:tuple)
     T1s, T2s = map(parameters, (TFA, TA)) 
