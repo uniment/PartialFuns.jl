@@ -69,8 +69,8 @@ underscores!(ex) = let  uf=:(PartialFuns.UnfixedArg), ufs=:(PartialFuns.UnfixedA
 end
 
 # types and functions
-import Base: show, length, iterate, getproperty, broadcastable
-struct FixedArg{X} x::X;   FixedArg(x::X) where X = new{X}(x)  end
+import Base: show, length, iterate, getproperty, broadcastable, _stable_typeof
+struct FixedArg{X} x::X;   FixedArg(x) = new{_stable_typeof(x)}(x)  end
 struct UnfixedArg{T}       UnfixedArg(T) = new{T}();      UnfixedArg() = new{Any}()      end
 struct UnfixedArgSplat{T}  UnfixedArgSplat(T) = new{T}(); UnfixedArgSplat() = new{Any}() end
 const  UnfixedArgOrSplat{T} = Union{UnfixedArg{T}, UnfixedArgSplat{T}}
