@@ -1,7 +1,7 @@
 *PartialFuns.jl*
 ---
 
-A more refined demo for underscore partial application syntax, à la [PR#24990](https://github.com/JuliaLang/julia/pull/24990).
+Refined partial function applicator types and parsing for underscore partial application syntax, à la [PR#24990](https://github.com/JuliaLang/julia/pull/24990).
 
 You can do things like this!
 
@@ -75,9 +75,6 @@ Provides types:
 Run this in your REPL:
 
 ```julia
-using Pkg
-pkg"add https://github.com/uniment/PartialFuns.jl"
-
 using PartialFuns
 PartialFuns.init_repl()
 ```
